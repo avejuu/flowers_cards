@@ -45,3 +45,28 @@ export async function downloadImage(url: string) {
     console.error('[image-copy]', { stage, host: new URL(url).hostname, error: imageErrorMessage(error, secrets), ...(cause ? { cause: imageErrorMessage(cause, secrets) } : {}) });
     throw new ApiError(503, 'Das Foto konnte nicht gespeichert werden. Bitte prüfe die Verbindung und die Schreibrechte des Servers und versuche es erneut.'); }
 }
+
+// Uploads use the same safe internal path format as downloaded images.
+export async function uploadImage(request: Request) {
+  const type = request.headers.get('content-type')?.split(';')[0];
+  const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' } as Record<string, string>)[type || ''];
+  if (!ext) throw new ApiError(415, 'Bitte wähle ein JPEG-, PNG- oder WebP-Bild.');
+  if (Number(request.headers.get('content-length') || 0) > MAX_BYTES) throw new ApiError(413, 'Das Foto ist zu groß. Maximal 10 MB sind erlaubt.');
+  if (!request.body) throw new ApiError(400, 'Bitte wähle ein Bild aus.');
+  const reader = request.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
+  while (true) {
+    const { done, value } = await reader.read(); if (done) break;
+    size += value.length;
+    if (size > MAX_BYTES) { await reader.cancel(); throw new ApiError(413, 'Das Foto ist zu groß. Maximal 10 MB sind erlaubt.'); }
+    chunks.push(value);
+  }
+  const bytes = Buffer.concat(chunks);
+  const valid = ext === 'jpg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff : ext === 'png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) : bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP';
+  if (!valid) throw new ApiError(415, 'Die Datei ist kein gültiges JPEG-, PNG- oder WebP-Bild.');
+  const filename = `${createHash('sha256').update(randomUUID()).digest('hex')}.${ext}`;
+  try {
+    await mkdir(IMAGE_DIR, { recursive: true });
+    await writeFile(path.join(IMAGE_DIR, filename), bytes, { flag: 'wx' });
+  } catch { throw new ApiError(503, 'Das Foto konnte nicht gespeichert werden. Bitte versuche es erneut.'); }
+  return `/api/images/${filename}`;
+}

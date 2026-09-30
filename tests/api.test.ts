@@ -112,3 +112,11 @@ test('Wikimedia fallback uses botanical name and preserves plain attribution and
   const result = await search(request({ name: 'Strandflieder' })); assert.equal(result.status, 200);
   const data = await result.json(); assert.deepEqual(queries, ['Limonium']); assert.equal(data.photos.length, 8); assert.equal(data.photos[0].source, 'wikimedia'); assert.equal(data.photos[0].author, 'Artist'); assert.equal(data.photos[0].license, 'CC BY-SA 4.0');
 });
+
+test('own image flow identifies the plant without contacting image providers', async () => {
+  keys(); let calls = 0;
+  global.fetch = async input => { calls++; assert.ok(String(input).includes('googleapis')); return model({ ...identity, isValidPlant: true }); };
+  const response = await search(request({ name: 'Rose', skipImages: true }));
+  assert.equal(response.status, 200); const data = await response.json();
+  assert.deepEqual(data.identity, identity); assert.deepEqual(data.photos, []); assert.equal(calls, 1);
+});

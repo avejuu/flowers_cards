@@ -33,7 +33,7 @@ export async function writeBackup(deviceId: string, card: FlowerCard) {
     verwendung=EXCLUDED.verwendung, updated_at=EXCLUDED.updated_at, card_data=EXCLUDED.card_data
     WHERE flower_cards_backup.device_id=EXCLUDED.device_id AND flower_cards_backup.deleted_at IS NULL
     AND flower_cards_backup.updated_at <= EXCLUDED.updated_at RETURNING id`,
-    [card.id, deviceId, card.germanName, card.englishName, card.latinName, card.imageUrl, card.imageSource, card.imagePageUrl || null, card.imageAuthor, card.imageLicense || null, card.haltbarkeit, card.kombiniertMit, card.verarbeitung, card.verwendung, card.createdAt, card.updatedAt || card.createdAt, JSON.stringify(card)]);
+    [card.id, deviceId, card.germanName, card.englishName, card.latinName, card.imageUrl, card.imageSource, card.imagePageUrl || null, card.imageAuthor ?? '', card.imageLicense || null, card.haltbarkeit, card.kombiniertMit, card.verarbeitung, card.verwendung, card.createdAt, card.updatedAt || card.createdAt, JSON.stringify(card)]);
   if (!result.rowCount) throw new ApiError(409, 'Die lokale Karte wurde gespeichert; die Sicherung enthält eine neuere oder gelöschte Version.');
 }
 export async function deleteBackup(deviceId: string, id: string) {

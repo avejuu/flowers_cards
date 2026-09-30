@@ -28,6 +28,13 @@ test('PostgreSQL schema, save/update, device isolation, restore and tombstone se
     assert.equal((await api({ action: 'delete', deviceId, id: card.id })).status, 200);
     assert.deepEqual((await (await api({ action: 'load', deviceId })).json()).cards, []);
     assert.equal((await api({ action: 'save', deviceId, card: edited })).status, 409);
+    const upload = { ...card, id: 'd2277d50-477a-4a36-9670-10d9a75edce3', imageUrl: `/api/images/${'a'.repeat(64)}.png`, imageSource: 'upload', imageAuthor: null, imageLicense: null, imageSourcePage: null, imagePageUrl: undefined };
+    assert.equal((await api({ action: 'save', deviceId, card: upload })).status, 200);
+    assert.deepEqual((await (await api({ action: 'load', deviceId })).json()).cards, [JSON.parse(JSON.stringify(upload))]);
+    const row = await db.query('SELECT image_url, image_source, image_author FROM flower_cards_backup WHERE id=$1', [upload.id]);
+    assert.deepEqual(row.rows[0], { image_url: upload.imageUrl, image_source: 'upload', image_author: '' });
+    assert.equal((await api({ action: 'delete', deviceId, id: upload.id })).status, 200);
+    assert.deepEqual((await (await api({ action: 'load', deviceId })).json()).cards, []);
     const lateId = 'd2795f01-67ea-4336-b120-bb92ea7e31cf';
     assert.equal((await api({ action: 'delete', deviceId, id: lateId })).status, 200);
     assert.equal((await api({ action: 'save', deviceId, card: { ...edited, id: lateId } })).status, 409);
