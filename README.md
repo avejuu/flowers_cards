@@ -26,9 +26,9 @@ Open http://localhost:3000. Production: `npm run build`, then `npm start`.
 
 ## Card flow and images
 
-Enter a German or botanical plant name → identify a real plant → search images → manually choose an image → generate four editable German fields → optionally click **Informationen prüfen** → save. The card retains its two-sided flip design and the four fields Haltbarkeit, Kombiniert sich mit, Verarbeitung and Verwendung.
+Enter a German or botanical plant name → identify a real plant → search images → review the suggested first image, choose another or upload your own photo → generate four editable German fields → optionally click **Informationen prüfen** → save. The card retains its two-sided flip design and the four fields Haltbarkeit, Kombiniert sich mit, Verarbeitung and Verwendung.
 
-Pixabay is primary: English name, botanical name, then `<english name> flower`. When fewer than six distinct usable photos are available, Wikimedia Commons searches botanical, English, then German names. Up to eight choices are displayed. No image is automatically selected. The provider modules return shared photo metadata, including lowercase `source` (`pixabay` or `wikimedia`), `sourcePageUrl`, `author` and `license`. Compatibility fields preserve the existing UI and old saved cards.
+Pixabay is primary: English name, botanical name, then `<english name> flower`. When fewer than six distinct usable photos are available, Wikimedia Commons searches botanical, English, then German names. Up to eight choices are displayed. The first image is suggested and selected; users can choose another or replace it with their own upload before generating the card. The provider modules return shared photo metadata, including lowercase `source` (`pixabay` or `wikimedia`), `sourcePageUrl`, `author` and `license`. Compatibility fields preserve the existing UI and old saved cards.
 
 Wikimedia results include plain-text author/license attribution and source-page links; files without license metadata or supported raster image types are excluded. Attribution remains visible after saving. Inspect the original source page for full license details. See [MediaWiki imageinfo documentation](https://www.mediawiki.org/wiki/API:Imageinfo).
 
@@ -102,3 +102,5 @@ New files:
 - `database/backup.sql`
 - `tests/backup.test.ts`
 - `tests/backup-postgres.test.ts`
+
+Own photo uploads are stored as bytes in the `flower_images` PostgreSQL table when `DATABASE_URL` is configured, so uploads work on hosts with a read-only filesystem and survive redeployments. Without a database they use `.data/images`, which must be writable and persistent. Existing disk images remain readable. Upload errors log `[image-upload]` with the storage backend and a sanitized cause.

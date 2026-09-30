@@ -5,8 +5,20 @@ import path from 'node:path';
 import { ApiError } from './server';
 import { downloadableImageUrl } from './schemas';
 import { imageErrorMessage } from './image-errors';
+import { database } from './backup-db';
 export const IMAGE_DIR = path.join(process.cwd(), '.data', 'images');
 const MAX_BYTES = 10 * 1024 * 1024;
+async function imageDatabase() {
+  const db = await database();
+  await db.query('CREATE TABLE IF NOT EXISTS flower_images (filename TEXT PRIMARY KEY, bytes BYTEA NOT NULL)');
+  return db;
+}
+export async function readUploadedImage(filename: string): Promise<Buffer | undefined> {
+  if (!process.env.DATABASE_URL?.trim()) return undefined;
+  const db = await imageDatabase();
+  const result = await db.query('SELECT bytes FROM flower_images WHERE filename=$1', [filename]);
+  return result.rows[0]?.bytes;
+}
 export async function downloadImage(url: string) {
   downloadableImageUrl.parse(url);
   const hash = createHash('sha256').update(url).digest('hex');
@@ -65,8 +77,16 @@ export async function uploadImage(request: Request) {
   if (!valid) throw new ApiError(415, 'Die Datei ist kein gültiges JPEG-, PNG- oder WebP-Bild.');
   const filename = `${createHash('sha256').update(randomUUID()).digest('hex')}.${ext}`;
   try {
-    await mkdir(IMAGE_DIR, { recursive: true });
-    await writeFile(path.join(IMAGE_DIR, filename), bytes, { flag: 'wx' });
-  } catch { throw new ApiError(503, 'Das Foto konnte nicht gespeichert werden. Bitte versuche es erneut.'); }
+    if (process.env.DATABASE_URL?.trim()) {
+      const db = await imageDatabase();
+      await db.query('INSERT INTO flower_images (filename, bytes) VALUES ($1, $2)', [filename, bytes]);
+    } else {
+      await mkdir(IMAGE_DIR, { recursive: true });
+      await writeFile(path.join(IMAGE_DIR, filename), bytes, { flag: 'wx' });
+    }
+  } catch (error) {
+    console.error('[image-upload]', { storage: process.env.DATABASE_URL?.trim() ? 'postgres' : 'filesystem', error: imageErrorMessage(error, [process.env.DATABASE_URL || '']) });
+    throw new ApiError(503, process.env.DATABASE_URL?.trim() ? 'Das Foto konnte nicht in der Datenbank gespeichert werden. Bitte prüfe die Datenbankverbindung und versuche es erneut.' : 'Das Foto konnte nicht gespeichert werden. Der Server benötigt einen beschreibbaren, dauerhaften Bildspeicher oder eine DATABASE_URL.');
+  }
   return `/api/images/${filename}`;
 }

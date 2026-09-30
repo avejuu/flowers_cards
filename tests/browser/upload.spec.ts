@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
 const identity = { germanName: 'Rose', englishName: 'Rose', latinName: 'Rosa' };
 const info = { haltbarkeit: '7 Tage', kombiniertMit: 'Grün', verarbeitung: 'Anschneiden', verwendung: 'Strauß' };
-test('own photo first, manual text and saving without randomUUID or AI', async ({ page }) => {
+test('search first, own photo, manual text and saving without randomUUID or generation', async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
   await page.route('**/api/backup', route => route.fulfill({ json: { enabled: false } }));
-  await page.route('**/api/search', () => { throw new Error('Manual creation must not need search'); });
+  await page.route('**/api/search', route => route.fulfill({ json: { identity, photos: [], usedQuery: '' } }));
   await page.route('**/api/card', () => { throw new Error('Manual creation must not need AI'); });
   const imageUrl = '/api/images/' + 'c'.repeat(64) + '.png';
   await page.route('**/api/images/upload', route => route.fulfill({ json: { imageUrl } }));
@@ -12,6 +12,10 @@ test('own photo first, manual text and saving without randomUUID or AI', async (
   await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
   await expect(page.getByLabel('Haltbarkeit', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Eigenes Foto hochladen', exact: true })).toHaveCount(0);
+  await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
+  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Eigenes Foto hochladen', exact: true })).toBeVisible();
   await page.locator('input[type=file]').setInputFiles({ name: 'rose.png', mimeType: 'image/png', buffer: Buffer.from('photo') });
   await expect(page.locator('.photo-option.selected img')).toBeVisible();
   await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
@@ -30,9 +34,10 @@ test('failed text generation still allows manual entry and saving', async ({ pag
   await page.route('**/api/images/upload', route => route.fulfill({ json: { imageUrl: '/api/images/' + 'd'.repeat(64) + '.png' } }));
   await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
   await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
+  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Eigenes Foto hochladen', exact: true })).toBeVisible();
   await page.locator('input[type=file]').setInputFiles({ name: 'rose.png', mimeType: 'image/png', buffer: Buffer.from('photo') });
   await expect(page.locator('.photo-option.selected')).toBeVisible();
-  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
   await page.getByRole('button', { name: 'Karte erstellen', exact: true }).click();
   await expect(page.getByLabel('Haltbarkeit', { exact: true })).toBeVisible();
   await expect(page.getByText(/KI nicht erreichbar/)).toBeVisible();
@@ -44,10 +49,11 @@ test('failed text generation still allows manual entry and saving', async ({ pag
 for (const type of ['image/jpeg', 'image/png', 'image/webp']) test(`${type} upload, replace, save, reload, backup and delete`, async ({ page }) => {
   const backups: any[] = [];
   await page.route('**/api/backup', route => { backups.push(route.request().postDataJSON()); return route.fulfill({ json: { enabled: true, cards: [] } }); });
-  await page.route('**/api/search', route => { expect(route.request().postDataJSON().skipImages).toBe(true); return route.fulfill({ json: { identity, photos: [], usedQuery: '' } }); });
+  await page.route('**/api/search', route => { expect(route.request().postDataJSON().skipImages).toBe(false); return route.fulfill({ json: { identity, photos: [], usedQuery: '' } }); });
   await page.route('**/api/card', route => route.fulfill({ json: { ...identity, ...info } }));
   await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
   await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
+  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Eigenes Foto hochladen', exact: true })).toBeVisible();
   const base64 = await page.evaluate(type => { const canvas = document.createElement('canvas'); canvas.width = 8; canvas.height = 8; canvas.getContext('2d')!.fillRect(0, 0, 8, 8); return canvas.toDataURL(type).split(',')[1]; }, type);
   const input = page.locator('input[type=file]');
@@ -60,7 +66,6 @@ for (const type of ['image/jpeg', 'image/png', 'image/webp']) test(`${type} uplo
   const first = await page.locator('.photo-option.selected img').getAttribute('src');
   await input.setInputFiles({ name: 'replacement', mimeType: type, buffer: Buffer.from(base64, 'base64') });
   await expect(page.locator('.photo-option.selected img')).not.toHaveAttribute('src', first!);
-  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
   await expect(page.locator('.photo-option.selected img')).toBeVisible();
   await page.getByRole('button', { name: 'Karte erstellen', exact: true }).click();
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
@@ -73,4 +78,25 @@ for (const type of ['image/jpeg', 'image/png', 'image/webp']) test(`${type} uplo
   await page.getByRole('dialog').getByRole('button', { name: 'Löschen', exact: true }).click();
   await expect.poll(() => backups.some(body => body.action === 'delete')).toBe(true);
   await page.reload(); await expect(page.locator('.library-grid article')).toHaveCount(0);
+});
+
+test('suggested photo appears before replacement and generated characteristics', async ({ page }) => {
+  const photo = { id: 1, imageUrl: 'https://cdn.pixabay.com/photo/rose.jpg', thumbnailUrl: 'https://cdn.pixabay.com/photo/rose.jpg', imageSource: 'Pixabay', imageAuthor: 'Photographer', imagePageUrl: 'https://pixabay.com/photos/rose-1/', alt: 'Rose' };
+  await page.route('**/api/backup', route => route.fulfill({ json: { enabled: false } }));
+  await page.route('**/api/search', route => route.fulfill({ json: { identity, photos: [photo], usedQuery: 'Rose' } }));
+  await page.route('**/api/card', route => route.fulfill({ json: { ...identity, ...info } }));
+  await page.route('**/api/images/upload', route => route.fulfill({ json: { imageUrl: '/api/images/' + 'e'.repeat(64) + '.png' } }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Neue Karte' }).click();
+  await expect(page.getByRole('button', { name: 'Eigenes Foto hochladen', exact: true })).toHaveCount(0);
+  await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
+  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Foto von Photographer auswählen' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Haltbarkeit', { exact: true })).toHaveCount(0);
+  await page.locator('input[type=file]').setInputFiles({ name: 'own.png', mimeType: 'image/png', buffer: Buffer.from('photo') });
+  await expect(page.getByRole('button', { name: 'Foto von Photographer auswählen' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByLabel('Haltbarkeit', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Karte erstellen', exact: true }).click();
+  await expect(page.getByLabel('Haltbarkeit', { exact: true })).toHaveValue(info.haltbarkeit);
+  await expect(page.locator('.preview img')).toHaveAttribute('src', '/api/images/' + 'e'.repeat(64) + '.png');
 });
