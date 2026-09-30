@@ -1,0 +1,36 @@
+import { test, expect } from '@playwright/test';
+import photos from '../fixtures/live-images.json';
+const identity = { germanName: 'Rose', englishName: 'Rose', latinName: 'Rosa' };
+const info = { haltbarkeit: '7 Tage', kombiniertMit: 'Grün', verarbeitung: 'Anschneiden', verwendung: 'Strauß' };
+const fixture = { id: 1, imageUrl: 'https://cdn.pixabay.com/photo/copy-test.jpg', thumbnailUrl: 'https://cdn.pixabay.com/photo/copy-test.jpg', imageSource: 'Pixabay', imageAuthor: 'Test', imagePageUrl: 'https://pixabay.com/photos/rose/', alt: 'Rose' };
+for (const provider of ['Pixabay', 'Wikimedia']) test(`${provider} image copy survives reload without the remote origin`, async ({ page }) => {
+  test.skip(!process.env.LIVE_IMAGE_COPY, 'Opt-in integration test uses real provider downloads');
+  const photo = photos[provider as keyof typeof photos];
+  await page.route('**/api/backup', route => route.fulfill({ json: { enabled: false } }));
+  await page.route('**/api/search', route => route.fulfill({ json: { identity, photos: [photo], usedQuery: 'Rose' } }));
+  await page.route('**/api/card', route => route.fulfill({ json: { ...identity, ...info } }));
+  await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
+  await page.getByLabel('Blumenname', { exact: true }).fill('Rose'); await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await page.getByRole('button', { name: `Foto von ${photo.imageAuthor} auswählen` }).click();
+  await page.getByRole('button', { name: 'Karte erstellen', exact: true }).click();
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('blumenkarten:v1') || '[]')[0]?.imageUrl), { timeout: 45000 }).toMatch(/^\/api\/images\/[a-f0-9]{64}\.(jpg|png|webp)$/);
+  await page.route('https://**/*', route => route.abort());
+  await page.reload();
+  const image = page.locator('.library-grid img'); await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  await expect(page.getByText('Die lokale Fotokopie konnte nicht erstellt werden.', { exact: false })).toHaveCount(0);
+});
+test('failed image copy preserves saved card and original URL after reload', async ({ page }) => {
+  await page.route('**/api/backup', route => route.fulfill({ json: { enabled: false } }));
+  await page.route('**/api/images', route => route.fulfill({ status: 503, json: { error: 'Image download failed' } }));
+  await page.route('**/api/search', route => route.fulfill({ json: { identity, photos: [fixture], usedQuery: 'Rose' } }));
+  await page.route('**/api/card', route => route.fulfill({ json: { ...identity, ...info } }));
+  await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
+  await page.getByLabel('Blumenname', { exact: true }).fill('Rose'); await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await page.getByRole('button', { name: 'Foto von Test auswählen' }).click(); await page.getByRole('button', { name: 'Karte erstellen', exact: true }).click();
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(page.getByText('Karte lokal gespeichert. Die lokale Fotokopie konnte nicht erstellt werden.')).toBeVisible();
+  await page.reload(); await expect(page.locator('.library-grid article')).toHaveCount(1);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('blumenkarten:v1')!)[0].imageUrl)).toBe(fixture.imageUrl);
+});

@@ -32,7 +32,7 @@ Pixabay is primary: English name, botanical name, then `<english name> flower`. 
 
 Wikimedia results include plain-text author/license attribution and source-page links; files without license metadata or supported raster image types are excluded. Attribution remains visible after saving. Inspect the original source page for full license details. See [MediaWiki imageinfo documentation](https://www.mediawiki.org/wiki/API:Imageinfo).
 
-Pixabay searches are cached for 24 hours in `.data/pixabay`. After saving locally, selected Pixabay images are downloaded to `.data/images`, with HTTPS host checks, file-signature checks and size limits. Failed downloads do not prevent local card saving and show a small warning. Keep `.data/images` on persistent storage when deploying: PostgreSQL backs up card records and image metadata, **not image file bytes**. Existing Pixabay/Pexels cards remain readable.
+Pixabay searches are cached for 24 hours in `.data/pixabay`. After saving locally, selected Pixabay and Wikimedia images are downloaded to `.data/images`, through `/api/images`, with strict HTTPS host checks (including every redirect), file-signature checks and a 10 MiB size limit. This endpoint already acts as a server-side image proxy; browser CORS does not affect the download. Failures log `[image-copy]` with the stage and sanitized error message on the server or in the browser console; URLs and configured API keys are redacted. Failed downloads do not prevent local card saving and show a small warning. Keep `.data/images` on persistent storage when deploying: PostgreSQL backs up card records and image metadata, **not image file bytes**. Existing Pixabay/Pexels cards remain readable.
 
 ## Local storage and optional PostgreSQL backup
 
@@ -65,7 +65,9 @@ npm run dev
 npm run test:e2e
 ```
 
-API/storage tests cover the 12 requested plants, provider ordering, fallback, malformed JSON, unavailable services, unsafe URLs, legacy cards, merging and local deletion markers. PostgreSQL SQL is exercised against an embedded PostgreSQL engine (PGlite) for schema creation, upserts, recovery, ownership isolation, stale updates and deletion tombstones. Browser tests cover complete manual creation, editing, optional verification, flipping, local persistence with unavailable backup, simulated backup recovery and failed-delete retries.
+API/storage tests cover the 12 requested plants, provider ordering, fallback, malformed JSON, unavailable services, unsafe URLs, legacy cards, merging and local deletion markers. PostgreSQL SQL is exercised against an embedded PostgreSQL engine (PGlite) for schema creation, upserts, recovery, ownership isolation, stale updates and deletion tombstones. Run `LIVE_IMAGE_COPY=1 npx playwright test tests/browser/image-copy.spec.ts --project=chromium` against a running app to exercise the real image endpoint with both providers, reload with remote image requests blocked, and verify failure recovery. Public provider URLs in `tests/fixtures/live-images.json` may expire and need refreshing.
+
+Browser tests cover complete manual creation, editing, optional verification, flipping, local persistence with unavailable backup, simulated backup recovery and failed-delete retries.
 
 Live validation accepted Einblatt, Spathiphyllum, Orchidee, Anthurie, Rose, Tulpe, Eukalyptus, Monstera, Schleierkraut, Hortensie, Lavendel and Geranie, each with eight Pixabay choices. Live Neon backup requires your `DATABASE_URL`; automated backup browser tests simulate the remote endpoint.
 

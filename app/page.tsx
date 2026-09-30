@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { cardSchema, fieldLabels, generatedSchema, identitySchema, infoSchema, nameInput, photoSchema, type FlowerCard, type FlowerInfo, type Identity, type Photo } from '@/lib/schemas';
 import { loadCards, STORAGE_KEY, storeCards, markDeleted, deletedIds } from '@/lib/storage';
+import { imageErrorMessage } from '@/lib/image-errors';
 import { backupRequest, restoreBackup } from '@/lib/backup-client';
 const fields = Object.keys(fieldLabels) as (keyof FlowerInfo)[];
 async function api(path: string, body: unknown) {
   let response: Response;
   try { response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(path === '/api/search' ? 190000 : 65000) }); }
-  catch { throw new Error('Keine Verbindung zum Server. Bitte prüfe deine Internetverbindung und versuche es erneut.'); }
+  catch (error) { if (path === '/api/images') console.error('[image-copy] Request failed:', imageErrorMessage(error)); throw new Error('Keine Verbindung zum Server. Bitte prüfe deine Internetverbindung und versuche es erneut.'); }
   let data;
   try { data = await response.json(); } catch { throw new Error('Der Server hat eine ungültige Antwort geliefert. Bitte versuche es erneut.'); }
   if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Die Anfrage ist fehlgeschlagen. Bitte versuche es erneut.');
@@ -105,15 +106,19 @@ export default function Home() {
         reset(); setOpen(false); setNotice('Karte gespeichert.');
         // The card is already local. Image caching and database backup cannot block saving.
         void (async () => {
-          if (saved.imageSource === 'Pixabay' && saved.imageUrl.startsWith('https://')) {
+          if ((saved.imageSource === 'Pixabay' || saved.imageSource === 'Wikimedia') && saved.imageUrl.startsWith('https://')) {
             try {
               const downloaded = await api('/api/images', { imageUrl: saved.imageUrl });
               const latest = loadCards();
               if (latest.some(card => card.id === saved.id && card.updatedAt === saved.updatedAt)) {
-                saved.imageUrl = cardSchema.shape.imageUrl.parse(downloaded.imageUrl);
-                storeCards(latest.map(card => card.id === saved.id ? saved : card)); setCards(loadCards());
+                const copied = { ...saved, imageUrl: cardSchema.shape.imageUrl.parse(downloaded.imageUrl) };
+                storeCards(latest.map(card => card.id === saved.id ? copied : card));
+                saved.imageUrl = copied.imageUrl; setCards(loadCards());
               }
-            } catch { setBackupWarning('Karte lokal gespeichert. Die lokale Fotokopie konnte nicht erstellt werden.'); }
+            } catch (error) {
+              console.error('[image-copy] Could not download or persist image copy:', imageErrorMessage(error));
+              setBackupWarning('Karte lokal gespeichert. Die lokale Fotokopie konnte nicht erstellt werden.');
+            }
           }
           if (!deletedIds().includes(saved.id)) await backupRequest({ action: 'save', card: saved });
         })().catch(() => setBackupWarning('Karte lokal gespeichert. Die Datenbanksicherung ist gerade nicht erreichbar.'));

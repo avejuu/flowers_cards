@@ -1,0 +1,33 @@
+{
+  "Pixabay": {
+    "id": 4945396,
+    "imageUrl": "https://pixabay.com/get/g90583231859f3a9c883494af1056420002109d87c12fa3a3a04de935f0e66d3166519de60a6aee719154e9756c0e15eed894a238d40b56bfd393d0bbd72dacad_1280.jpg",
+    "thumbnailUrl": "https://pixabay.com/get/g6557b1f4ec22ddf41a0fb1ff7006149d836a4f301e0940ecc4026a901382b0251a5aa16c83b0119ed6593f92e8f4622a4ac973c9d99a94bfb7b50e00aae822e8_640.jpg",
+    "source": "pixabay",
+    "sourcePageUrl": "https://pixabay.com/photos/wild-tulip-tulipa-sylvestris-4945396/",
+    "author": "manfredrichter",
+    "license": "Pixabay Content License",
+    "imageSource": "Pixabay",
+    "imageAuthor": "manfredrichter",
+    "imageAuthorUrl": "https://pixabay.com/users/manfredrichter-4055600/",
+    "imagePageUrl": "https://pixabay.com/photos/wild-tulip-tulipa-sylvestris-4945396/",
+    "imageLicense": "Pixabay Content License",
+    "imageLicenseUrl": "https://pixabay.com/service/license-summary/",
+    "alt": "wild tulip, tulipa sylvestris, vineyard tulip, forest-tulip, blossoms, white, spring, petals, tulip blossom, wild, outdoors, tulip, nature, stamens, forest"
+  },
+  "Wikimedia": {
+    "id": 70837074,
+    "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/c/cf/Rosa_%27Rosengr%C3%A4fin_Marie_Henriette%27_%28actm%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+    "thumbnailUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cf/Rosa_%27Rosengr%C3%A4fin_Marie_Henriette%27_%28actm%29.jpg/960px-Rosa_%27Rosengr%C3%A4fin_Marie_Henriette%27_%28actm%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "source": "wikimedia",
+    "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:Rosa_%27Rosengr%C3%A4fin_Marie_Henriette%27_(actm).jpg",
+    "author": "Agnes Monkelbaan",
+    "license": "CC BY-SA 4.0",
+    "imageSource": "Wikimedia",
+    "imageAuthor": "Agnes Monkelbaan",
+    "imagePageUrl": "https://commons.wikimedia.org/wiki/File:Rosa_%27Rosengr%C3%A4fin_Marie_Henriette%27_(actm).jpg",
+    "imageLicense": "CC BY-SA 4.0",
+    "imageLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "alt": "Rosa 'Rosengräfin Marie Henriette' (actm).jpg"
+  }
+}

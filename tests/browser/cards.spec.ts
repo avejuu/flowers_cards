@@ -30,6 +30,8 @@ const plantNames = ['Einblatt', 'Spathiphyllum', 'Orchidee', 'Anthurie', 'Rose',
 for (const name of plantNames) test(`complete local flow with unavailable backup: ${name}`, async ({ page }) => {
   const plant = { germanName: name === 'Spathiphyllum' ? 'Einblatt' : name, englishName: 'Plant', latinName: name };
   await page.route('**/api/backup', route => route.fulfill({ status: 503, json: { error: 'Datenbank nicht erreichbar' } }));
+  await page.route('**/api/images', route => route.fulfill({ json: { imageUrl: '/api/images/' + 'b'.repeat(64) + '.jpg' } }));
+  await page.route('**/api/images/*.jpg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="green"/></svg>' }));
   await page.route('https://upload.wikimedia.org/**', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="green"/></svg>' }));
   const commons = { ...photo, source: 'wikimedia', imageSource: 'Wikimedia', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/plant.jpg', thumbnailUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/plant.jpg', imagePageUrl: 'https://commons.wikimedia.org/wiki/File:Plant.jpg', imageAuthorUrl: undefined, imageLicense: 'CC BY-SA 4.0' };
   await page.route('**/api/search', route => route.fulfill({ json: { identity: plant, photos: [commons], usedQuery: name } }));
