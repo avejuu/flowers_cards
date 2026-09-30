@@ -1,3 +1,4 @@
+import { newId } from './id';
 import { z } from 'zod';
 import { cardSchema, type FlowerCard } from './schemas';
 export const STORAGE_KEY = 'blumenkarten:v1';
@@ -14,7 +15,7 @@ export const DELETED_KEY = 'blumenkarten:deleted';
 export function getDeviceId(): string {
   const stored = localStorage.getItem(DEVICE_KEY);
   if (stored) return z.uuid().parse(stored);
-  const id = crypto.randomUUID(); localStorage.setItem(DEVICE_KEY, id); return id;
+  const id = newId(); localStorage.setItem(DEVICE_KEY, id); return id;
 }
 export function deletedIds(): string[] { return z.array(z.string()).parse(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]')); }
 export function markDeleted(id: string) { localStorage.setItem(DELETED_KEY, JSON.stringify([...new Set([...deletedIds(), id])])); }

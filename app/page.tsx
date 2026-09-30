@@ -5,6 +5,7 @@ import { cardSchema, fieldLabels, generatedSchema, identitySchema, infoSchema, n
 import { loadCards, STORAGE_KEY, storeCards, markDeleted, deletedIds } from '@/lib/storage';
 import { imageErrorMessage } from '@/lib/image-errors';
 import { backupRequest, restoreBackup } from '@/lib/backup-client';
+import { newId } from '@/lib/id';
 const fields = Object.keys(fieldLabels) as (keyof FlowerInfo)[];
 async function api(path: string, body: unknown) {
   let response: Response;
@@ -41,7 +42,6 @@ export default function Home() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selected, setSelected] = useState<(Pick<FlowerCard, 'imageUrl' | 'imageSource' | 'imageAuthor' | 'imageAuthorUrl' | 'imagePageUrl' | 'imageLicense' | 'imageLicenseUrl'> & { id: number; thumbnailUrl: string; alt: string }) | null>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
-  const [skipImages, setSkipImages] = useState(false);
   const [info, setInfo] = useState<FlowerInfo | null>(null);
   const [suggestion, setSuggestion] = useState<FlowerInfo | null>(null);
   const [editing, setEditing] = useState<FlowerCard | null>(null);
@@ -64,7 +64,8 @@ export default function Home() {
     event.preventDefault(); setError(''); setNotice('');
     const parsed = nameInput.safeParse(name);
     if (!parsed.success) { setError(parsed.error.issues[0].message); return; }
-    setBusy(skipImages ? 'Pflanze wird bestimmt …' : 'Blume und Fotos werden gesucht …'); setIdentity(null); setSelected(null); setInfo(null); setSuggestion(null); setPhotos([]);
+    const skipImages = selected?.imageSource === 'upload';
+    setBusy(skipImages ? 'Pflanze wird bestimmt …' : 'Blume und Fotos werden gesucht …'); setIdentity(null); if (!skipImages) setSelected(null); setInfo(null); setSuggestion(null); setPhotos([]);
     try {
       const result = z.object({ identity: identitySchema, photos: z.array(photoSchema), usedQuery: z.string(), warning: z.string().optional() }).parse(await api('/api/search', { name: parsed.data, skipImages }));
       setIdentity(result.identity); setPhotos(result.photos); if (result.warning) setNotice(result.warning);
@@ -88,11 +89,21 @@ export default function Home() {
     } catch (err) { setError(err instanceof Error ? err.message : 'Das Foto konnte nicht hochgeladen werden.'); }
     finally { setBusy(''); }
   }
+  function enterText() {
+    if (!selected) return;
+    if (!identity) {
+      const parsed = nameInput.safeParse(name);
+      if (!parsed.success) { setError(parsed.error.issues[0].message); return; }
+      setIdentity({ germanName: parsed.data, englishName: parsed.data, latinName: '' });
+    }
+    setError(''); setNotice('');
+    setInfo({ haltbarkeit: '', kombiniertMit: '', verarbeitung: '', verwendung: '' });
+  }
   async function generate() {
     if (!identity || !selected) return;
     setBusy('Informationen werden erstellt …'); setError(''); setNotice('');
     try { const result = generatedSchema.parse(await api('/api/card', { action: 'generate', identity })); setInfo(infoSchema.parse(result)); }
-    catch (err) { setError(err instanceof z.ZodError ? 'Die Informationen sind unvollständig. Bitte versuche es erneut.' : (err as Error).message); }
+    catch (err) { setInfo({ haltbarkeit: '', kombiniertMit: '', verarbeitung: '', verwendung: '' }); setNotice(`${err instanceof z.ZodError ? 'Die Informationen sind unvollständig.' : (err as Error).message} Du kannst den Text selbst eingeben und die Karte speichern.`); }
     finally { setBusy(''); }
   }
   async function verify() {
@@ -114,7 +125,7 @@ export default function Home() {
   }
   async function save() {
     if (!identity || !selected || !info || !storageOk) return;
-    const parsed = cardSchema.safeParse({ ...identity, ...info, id: editing?.id || crypto.randomUUID(), imageUrl: selected.imageUrl, imageSource: selected.imageSource, imageOriginalUrl: selected.imageSource === 'upload' ? undefined : editing?.imageOriginalUrl || (selected.imageUrl.startsWith('https://') ? selected.imageUrl : undefined), imageSourcePage: selected.imageSource === 'upload' ? null : undefined, imageAuthor: selected.imageAuthor, imageAuthorUrl: selected.imageAuthorUrl, imagePageUrl: selected.imagePageUrl, imageLicense: selected.imageLicense, imageLicenseUrl: selected.imageLicenseUrl, updatedAt: new Date().toISOString(), createdAt: editing?.createdAt || new Date().toISOString() });
+    const parsed = cardSchema.safeParse({ ...identity, ...info, id: editing?.id || newId(), imageUrl: selected.imageUrl, imageSource: selected.imageSource, imageOriginalUrl: selected.imageSource === 'upload' ? undefined : editing?.imageOriginalUrl || (selected.imageUrl.startsWith('https://') ? selected.imageUrl : undefined), imageSourcePage: selected.imageSource === 'upload' ? null : undefined, imageAuthor: selected.imageAuthor, imageAuthorUrl: selected.imageAuthorUrl, imagePageUrl: selected.imagePageUrl, imageLicense: selected.imageLicense, imageLicenseUrl: selected.imageLicenseUrl, updatedAt: new Date().toISOString(), createdAt: editing?.createdAt || new Date().toISOString() });
     if (!parsed.success) { setError('Bitte fülle alle vier Felder aus und beachte die maximale Länge.'); return; }
     setBusy('Karte wird gespeichert …'); setError('');
     try {
@@ -155,12 +166,12 @@ export default function Home() {
     {storageError && <div role="alert" className="alert error">{storageError}</div>}
     {error && <div role="alert" className="alert error">{error}</div>}
     {notice && <div role="status" className="alert success">{notice}</div>}
-    {open && <section className="editor" aria-label="Karte erstellen"><div className="section-heading"><div><p className="eyebrow">{editing ? 'KARTE BEARBEITEN' : 'NEUE KARTE'}</p><h2>{info ? 'Informationen & Vorschau' : 'Welche Blume darf es sein?'}</h2></div><button className="quiet" disabled={!!busy} onClick={() => { if ((info || selected) && !window.confirm('Entwurf verwerfen und zurück zur Sammlung?')) return; reset(); setOpen(false); }}>Zurück</button></div>
-      {!info && <><form onSubmit={search} className="search-form"><label htmlFor="flower-name">Blumenname<input id="flower-name" placeholder="z. B. Strandflieder" value={name} onChange={event => setName(event.target.value)} maxLength={100} disabled={!!busy} autoFocus required /></label><button className="primary" disabled={!!busy} type="submit">Suchen</button></form><label className="hint"><input type="checkbox" checked={skipImages} disabled={!!busy} onChange={event => setSkipImages(event.target.checked)} /> Eigenes Foto verwenden – Bildsuche überspringen</label><p className="hint">Gib den deutschen Namen ein. Wir suchen mit dem englischen und bei Bedarf dem botanischen Namen.</p></>}
+    {open && <section className="editor" aria-label="Karte erstellen"><div className="section-heading"><div><p className="eyebrow">{editing ? 'KARTE BEARBEITEN' : 'NEUE KARTE'}</p><h2>{info ? '2. Text & Vorschau' : '1. Foto auswählen'}</h2></div><button className="quiet" disabled={!!busy} onClick={() => { if ((info || selected) && !window.confirm('Entwurf verwerfen und zurück zur Sammlung?')) return; reset(); setOpen(false); }}>Zurück</button></div>
+      {!info && <><form onSubmit={search} className="search-form"><label htmlFor="flower-name">Blumenname<input id="flower-name" placeholder="z. B. Strandflieder" value={name} onChange={event => { setName(event.target.value); setIdentity(null); setPhotos([]); if (selected?.imageSource !== 'upload') setSelected(null); }} maxLength={100} disabled={!!busy} autoFocus required /></label><button className="primary" disabled={!!busy} type="submit">Suchen</button></form><p className="hint">Suche vorgeschlagene Fotos nach dem Blumennamen oder lade direkt dein eigenes Foto hoch. Danach folgt der Text.</p></>}
       {identity && <div className="identity"><strong>{identity.germanName}</strong><span>{identity.englishName}{identity.latinName && ` · ${identity.latinName}`}</span></div>}
-      {identity && !info && <><div className="photo-heading"><h3>Wähle ein passendes Foto</h3><span className="hint">Pixabay / Wikimedia Commons</span></div><p className="hint">Bitte prüfe selbst, ob das Foto die richtige Blume zeigt.</p><div className="photo-grid">{photos.map(photo => <div key={`${photo.imageSource}:${photo.id}`}><button className={`photo-option ${selected?.id === photo.id && selected?.imageSource === photo.imageSource ? 'selected' : ''}`} aria-label={`Foto von ${photo.imageAuthor} auswählen`} aria-pressed={selected?.id === photo.id && selected?.imageSource === photo.imageSource} disabled={!!busy} onClick={() => setSelected(photo)}><FlowerImage src={photo.thumbnailUrl} alt={photo.alt || identity?.germanName || 'Blume'} />{selected?.id === photo.id && selected?.imageSource === photo.imageSource && <span className="selection-mark">✓ Ausgewählt</span>}</button><Attribution photo={photo} /></div>)}</div>{selected?.imageSource === 'upload' && <div className="photo-grid"><div><div className="photo-option selected"><FlowerImage src={selected.imageUrl} alt={selected.alt} /><span className="selection-mark">✓ Eigenes Foto ausgewählt</span></div></div></div>}<div className="actions"><span className="hint">{selected ? 'Foto ausgewählt. Weiter zu den Informationen.' : 'Wähle ein Foto, um fortzufahren.'}</span><button className="primary" onClick={generate} disabled={!selected || !!busy}>Karte erstellen</button></div></>}
-      {identity && <div className="actions"><input ref={uploadInput} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Bilddatei auswählen" style={{ display: 'none' }} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void upload(file); }} /><button type="button" disabled={!!busy} onClick={() => uploadInput.current?.click()}>Eigenes Foto hochladen</button><span className="hint">JPEG, PNG oder WebP · maximal 10 MB</span></div>}
-      {info && preview && <div className="edit-layout"><div><div className="edit-fields">{fields.map(key => <label key={key} htmlFor={key}>{fieldLabels[key]}<textarea id={key} aria-label={fieldLabels[key]} value={info[key]} rows={key === 'verarbeitung' ? 4 : 3} maxLength={key === 'verarbeitung' ? 1000 : 600} disabled={!!busy} onChange={event => { setInfo({ ...info, [key]: event.target.value }); setSuggestion(null); setNotice(''); }} /></label>)}</div><p className="hint">KI-generierte Angaben. Du kannst alle Felder bearbeiten. Eine zusätzliche KI-Prüfung ist optional.</p><div className="actions"><button onClick={verify} disabled={!!busy}>Informationen prüfen</button><button className="primary" onClick={save} disabled={!!busy || !storageOk}>Speichern</button></div></div><aside className="preview"><p className="eyebrow">KARTENVORSCHAU</p><FlipCard card={preview} /><p className="hint">Klicke auf die Karte, um sie umzudrehen.</p></aside></div>}
+      {!info && (identity || selected) && <><div className="photo-heading"><h3>Wähle ein passendes Foto</h3><span className="hint">Pixabay / Wikimedia Commons</span></div><p className="hint">Bitte prüfe selbst, ob das Foto die richtige Blume zeigt.</p><div className="photo-grid">{photos.map(photo => <div key={`${photo.imageSource}:${photo.id}`}><button className={`photo-option ${selected?.id === photo.id && selected?.imageSource === photo.imageSource ? 'selected' : ''}`} aria-label={`Foto von ${photo.imageAuthor} auswählen`} aria-pressed={selected?.id === photo.id && selected?.imageSource === photo.imageSource} disabled={!!busy} onClick={() => setSelected(photo)}><FlowerImage src={photo.thumbnailUrl} alt={photo.alt || identity?.germanName || 'Blume'} />{selected?.id === photo.id && selected?.imageSource === photo.imageSource && <span className="selection-mark">✓ Ausgewählt</span>}</button><Attribution photo={photo} /></div>)}</div>{selected?.imageSource === 'upload' && <div className="photo-grid"><div><div className="photo-option selected"><FlowerImage src={selected.imageUrl} alt={selected.alt} /><span className="selection-mark">✓ Eigenes Foto ausgewählt</span></div></div></div>}<div className="actions"><span className="hint">{selected ? 'Foto ausgewählt. Weiter zu den Informationen.' : 'Wähle ein Foto, um fortzufahren.'}</span><div className="text-actions">{identity && <button className="primary" onClick={generate} disabled={!selected || !!busy}>Karte erstellen</button>}<button onClick={enterText} disabled={!selected || !!busy}>Text selbst eingeben</button></div></div></>}
+      {open && <div className="actions"><input ref={uploadInput} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Bilddatei auswählen" style={{ display: 'none' }} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void upload(file); }} /><button type="button" disabled={!!busy} onClick={() => uploadInput.current?.click()}>Eigenes Foto hochladen</button><span className="hint">JPEG, PNG oder WebP · maximal 10 MB</span></div>}
+      {info && preview && <div className="edit-layout"><div><div className="edit-fields">{fields.map(key => <label key={key} htmlFor={key}>{fieldLabels[key]}<textarea id={key} aria-label={fieldLabels[key]} value={info[key]} rows={key === 'verarbeitung' ? 4 : 3} maxLength={key === 'verarbeitung' ? 1000 : 600} disabled={!!busy} onChange={event => { setInfo({ ...info, [key]: event.target.value }); setSuggestion(null); setNotice(''); }} /></label>)}</div><p className="hint">Fülle alle vier Felder aus. Du kannst den Text bearbeiten und optional mit KI prüfen.</p><div className="actions"><button onClick={verify} disabled={!!busy}>Informationen prüfen</button><button className="primary" onClick={save} disabled={!!busy || !storageOk}>Speichern</button></div></div><aside className="preview"><p className="eyebrow">KARTENVORSCHAU</p><FlipCard card={preview} /><p className="hint">Klicke auf die Karte, um sie umzudrehen.</p></aside></div>}
       {suggestion && info && <section className="verification"><h3>Vorschlag nach der Prüfung</h3><p className="hint">Vergleiche die Änderungen und entscheide, ob du sie übernehmen möchtest.</p>{fields.filter(key => suggestion[key] !== info[key]).map(key => <div key={key} className="comparison"><strong>{fieldLabels[key]}</strong><div><span>Bisher</span><p>{info[key]}</p></div><div><span>Vorschlag</span><p>{suggestion[key]}</p></div></div>)}<div className="actions"><button onClick={() => setSuggestion(null)}>Bisherige Angaben behalten</button><button className="primary" onClick={() => { setInfo(suggestion); setSuggestion(null); setNotice('Vorschlag übernommen. Du kannst die Angaben weiter bearbeiten.'); }}>Änderungen übernehmen</button></div></section>}
       {busy && <p role="status" className="loading"><span className="spinner" />{busy}</p>}
     </section>}

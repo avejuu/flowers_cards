@@ -1,6 +1,46 @@
 import { test, expect } from '@playwright/test';
 const identity = { germanName: 'Rose', englishName: 'Rose', latinName: 'Rosa' };
 const info = { haltbarkeit: '7 Tage', kombiniertMit: 'Grün', verarbeitung: 'Anschneiden', verwendung: 'Strauß' };
+test('own photo first, manual text and saving without randomUUID or AI', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
+  await page.route('**/api/backup', route => route.fulfill({ json: { enabled: false } }));
+  await page.route('**/api/search', () => { throw new Error('Manual creation must not need search'); });
+  await page.route('**/api/card', () => { throw new Error('Manual creation must not need AI'); });
+  const imageUrl = '/api/images/' + 'c'.repeat(64) + '.png';
+  await page.route('**/api/images/upload', route => route.fulfill({ json: { imageUrl } }));
+  await page.route('**/api/images/*.png', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>' }));
+  await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await expect(page.getByLabel('Haltbarkeit', { exact: true })).toHaveCount(0);
+  await page.locator('input[type=file]').setInputFiles({ name: 'rose.png', mimeType: 'image/png', buffer: Buffer.from('photo') });
+  await expect(page.locator('.photo-option.selected img')).toBeVisible();
+  await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
+  await page.getByRole('button', { name: 'Text selbst eingeben' }).click();
+  for (const [label, value] of [['Haltbarkeit', info.haltbarkeit], ['Kombiniert sich mit', info.kombiniertMit], ['Verarbeitung', info.verarbeitung], ['Verwendung', info.verwendung]]) {
+    await page.getByLabel(label, { exact: true }).fill(value);
+  }
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Rose: Rückseite anzeigen' })).toBeVisible();
+});
+test('failed text generation still allows manual entry and saving', async ({ page }) => {
+  await page.route('**/api/backup', route => route.fulfill({ json: { enabled: false } }));
+  await page.route('**/api/search', route => route.fulfill({ json: { identity, photos: [], usedQuery: '' } }));
+  await page.route('**/api/card', route => route.fulfill({ status: 503, json: { error: 'KI nicht erreichbar.' } }));
+  await page.route('**/api/images/upload', route => route.fulfill({ json: { imageUrl: '/api/images/' + 'd'.repeat(64) + '.png' } }));
+  await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
+  await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
+  await page.locator('input[type=file]').setInputFiles({ name: 'rose.png', mimeType: 'image/png', buffer: Buffer.from('photo') });
+  await expect(page.locator('.photo-option.selected')).toBeVisible();
+  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await page.getByRole('button', { name: 'Karte erstellen', exact: true }).click();
+  await expect(page.getByLabel('Haltbarkeit', { exact: true })).toBeVisible();
+  await expect(page.getByText(/KI nicht erreichbar/)).toBeVisible();
+  for (const label of ['Haltbarkeit', 'Kombiniert sich mit', 'Verarbeitung', 'Verwendung']) await page.getByLabel(label, { exact: true }).fill('Eigener Text');
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Rose: Rückseite anzeigen' })).toBeVisible();
+});
 for (const type of ['image/jpeg', 'image/png', 'image/webp']) test(`${type} upload, replace, save, reload, backup and delete`, async ({ page }) => {
   const backups: any[] = [];
   await page.route('**/api/backup', route => { backups.push(route.request().postDataJSON()); return route.fulfill({ json: { enabled: true, cards: [] } }); });
@@ -8,7 +48,6 @@ for (const type of ['image/jpeg', 'image/png', 'image/webp']) test(`${type} uplo
   await page.route('**/api/card', route => route.fulfill({ json: { ...identity, ...info } }));
   await page.goto('/'); await page.getByRole('button', { name: 'Neue Karte' }).click();
   await page.getByLabel('Blumenname', { exact: true }).fill('Rose');
-  await page.getByRole('checkbox').check(); await page.getByRole('button', { name: 'Suchen', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Eigenes Foto hochladen', exact: true })).toBeVisible();
   const base64 = await page.evaluate(type => { const canvas = document.createElement('canvas'); canvas.width = 8; canvas.height = 8; canvas.getContext('2d')!.fillRect(0, 0, 8, 8); return canvas.toDataURL(type).split(',')[1]; }, type);
   const input = page.locator('input[type=file]');
@@ -21,6 +60,8 @@ for (const type of ['image/jpeg', 'image/png', 'image/webp']) test(`${type} uplo
   const first = await page.locator('.photo-option.selected img').getAttribute('src');
   await input.setInputFiles({ name: 'replacement', mimeType: type, buffer: Buffer.from(base64, 'base64') });
   await expect(page.locator('.photo-option.selected img')).not.toHaveAttribute('src', first!);
+  await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+  await expect(page.locator('.photo-option.selected img')).toBeVisible();
   await page.getByRole('button', { name: 'Karte erstellen', exact: true }).click();
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect.poll(() => backups.find(body => body.action === 'save')?.card.imageSource).toBe('upload');
